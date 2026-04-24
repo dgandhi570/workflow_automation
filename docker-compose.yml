@@ -1,0 +1,56 @@
+version: "3.8"
+
+services:
+  # Node.js AI Middleware Server
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: workflow-ai-server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - RAILS_BACKEND_URL=${RAILS_BACKEND_URL:-http://host.docker.internal:3000}
+      - RAILS_AUTH_TOKEN=${RAILS_AUTH_TOKEN:-}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:80,http://localhost}
+      - RATE_LIMIT_WINDOW_MS=60000
+      - RATE_LIMIT_MAX=30
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - workflow-net
+
+  # React Client (nginx serving built assets)
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: workflow-ai-client
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - workflow-net
+
+networks:
+  workflow-net:
+    driver: bridge
+
+# Usage:
+#   1. Copy .env.example to .env and fill in GROQ_API_KEY
+#   2. docker-compose up --build
+#   3. Open http://localhost in your browser
+#
+# For development with hot reload, use:
+#   npm run dev (from workflow_middleware root)
